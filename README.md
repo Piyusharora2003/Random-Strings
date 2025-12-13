@@ -1,104 +1,35 @@
-import { Injectable } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
-import { Observable, ReplaySubject, throwError, of } from 'rxjs';
-import { tap, shareReplay, switchMap, share } from 'rxjs/operators';
+New Authentication and Flow:
 
-@Injectable({
-  providedIn: 'root'
-})
-export class ApiCallService {
+Authentication Changes: Previously, user preferences were stored locally. Now, user details are stored in a database via the common layer, our API gateway.
 
-  // This is your "semaphore".
-  // null = "not sent"
-  // Observable = "in progress" or "completed"
-  private userDetailsCache$: Observable<any> | null = null;
-  
-  // --- TODO: Define your userDetails endpoint URL ---
-  private readonly USER_DETAILS_URL = '/api/v1/userDetails'; 
+Login Flow: When a user logs in, the MFE shell redirects to the common layer’s /token endpoint for session creation. Once validated, the user is redirected back with a session ID.
 
-  constructor(private httpClient: HttpClient) { }
+Headers Used for Authorization and Routing:
 
-  /**
-   * This private function is the "semaphore" logic.
-   * It ensures the userDetails call runs only once.
-   */
-  private getOrFetchUserDetails(): Observable<any> {
-    // "Not sent": Create the request, make it "in progress"
-    if (!this.userDetailsCache$) {
-      this.userDetailsCache$ = this.httpClient.get(this.USER_DETAILS_URL).pipe(
-        tap(userInfo => {
-          // --- TODO: Store your token here ---
-          // Example: localStorage.setItem('auth_token', userInfo.token);
-        }),
-        // shareReplay(1) is the magic:
-        // 1. It multicasts the result to all subscribers.
-        // 2. It caches the last (1) emission.
-        // 3. Any new subscriber gets the cached value instantly.
-        shareReplay(1)
-      );
-    }
-    
-    // "In progress" or "Completed": Return the observable
-    return this.userDetailsCache$;
-  }
+menu-name: Indicates which part of the application is calling the API for authorization.
 
-  /**
-   * Your modified function.
-   */
-  public apicall(params: any): Observable<any> {
-    
-    // --- TODO: Your existing logic to parse params ---
-    const { method, url, body, options } = this.buildRequestFromParams(params);
+user-info: Carries encrypted user information, acting like a JWT token.
 
-    // --- Prevent recursive loop ---
-    // If the call *is* for userDetails, just return the semaphore.
-    if (url === this.USER_DETAILS_URL) {
-      return this.getOrFetchUserDetails().pipe(share());
-    }
+user-pref-region: Specifies the region (e.g., US or EU) for the PPLE backend, so the common layer can route requests accordingly.
 
-    // --- All other calls ---
-    // 1. Get the semaphore. This will either:
-    //    a) Trigger the userDetails call (if "not sent")
-    //    b) Wait for the in-progress call
-    //    c) Get the cached result instantly
-    // 
-    // 2. Use switchMap to wait ("hold") until the semaphore emits.
-    //
-    // 3. Once it emits, proceed ("unlocked") to the actual HTTP request.
-    return this.getOrFetchUserDetails().pipe(
-      switchMap(userInfo => {
-        // Token is now guaranteed to be stored.
-        // Make the real request.
-        return this.createHttpRequest(method, url, body, options);
-      }),
-      share() // Keep your original share()
-    );
-  }
+Flow of Requests:
 
-  // --- Helper to create the actual request ---
-  private createHttpRequest(method: string, url: string, body?: any, options?: any): Observable<any> {
-    switch (method.toLowerCase()) {
-      case 'get':
-        return this.httpClient.get(url, options);
-      case 'post':
-        return this.httpClient.post(url, body, options);
-      case 'put':
-        return this.httpClient.put(url, body, options);
-      case 'delete':
-        return this.httpClient.delete(url, options);
-      default:
-        return throwError(() => new Error('Invalid HTTP method'));
-    }
-  }
+Initial User Detail API Call: The MFE shell calls the common layer to get user details.
 
-  // --- TODO: Replace with your actual helper function ---
-  private buildRequestFromParams(params: any): { method: string, url: string, body?: any, options?: any } {
-    // Example placeholder
-    return { 
-      method: params.method || 'get', 
-      url: params.url, 
-      body: params.body, 
-      options: params.options 
-    };
-  }
-}
+Routing Subsequent Requests: Any requests to /pple/... endpoints are forwarded by the common layer to the appropriate PPLE backend based on the region header.
+
+Mermaid Diagram:
+
+sequenceDiagram
+    participant User
+    participant MFE_Shell
+    participant Common_Layer
+    participant PPLE_Backend
+
+    User->>MFE_Shell: Clicks Login
+    MFE_Shell->>Common_Layer: Request userDetail API
+    Common_Layer->>Common_Layer: Fetch user details, return to shell
+    MFE_Shell->>Common_Layer: Subsequent /pple/... requests
+    Common_Layer->>PPLE_Backend: Forward to PPLE backend based on region
+    PPLE_Backend-->>Common_Layer: Return response
+    Common_Layer-->>MFE_Shell: Forward response to client
