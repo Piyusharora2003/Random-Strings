@@ -210,6 +210,9 @@ Modern databases (PostgreSQL, MySQL InnoDB) use **MVCC** to reduce locking.
 - **Result:**  
   > Readers never block writers, and writers never block readers.
 
+- **Question:**
+  > Why count(*) is slow or why do seq scan?
+  There is no variable size for each transaction this variable can be different. 
 ---
 
 ## III. Scaling Strategies: Sharding & Partitioning
