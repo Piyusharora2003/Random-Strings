@@ -212,6 +212,7 @@ Modern databases (PostgreSQL, MySQL InnoDB) use **MVCC** to reduce locking.
 
 - **Question:**
   > Why count(*) is slow or why do seq scan?
+  > yt_link: https://youtu.be/GtQueJe6xRQ?si=M8VCZCuXXH_-ywBM
   There is no variable size for each transaction this variable can be different. 
 ---
 
