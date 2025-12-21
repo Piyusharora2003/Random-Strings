@@ -352,3 +352,71 @@ In a distributed system, you can only guarantee **two out of three**:
   - **AP systems:** Favor availability (many NoSQL databases)
 
 ---
+
+# Why Sequential I/O Beats Random I/O (Even with More Data)
+
+This example demonstrates why **access pattern matters more than data volume** in storage systems.
+
+---
+
+## Example: 1 GB Dataset
+
+---
+
+## Case A: 90% Random Reads
+
+### Assumptions
+- Total rows: **1,000,000**
+- Rows requiring random access: **90%**
+- Random read latency (SSD): **~100 µs per read**
+
+### Calculation
+900,000 × 100 µs = 90,000,000 µs
+= 90 seconds
+
+### Observation
+Even though only **90% of the data** is accessed,  
+**latency dominates total execution time**.
+
+> Yes — **seconds**, not milliseconds.
+
+---
+
+## Case B: 100% Sequential Read
+
+### Assumptions
+- Dataset size: **1 GB**
+- SSD sequential throughput: **2 GB/s**
+
+### Calculation
+1 GB / 2 GB/s = 0.5 seconds
+
+### Observation
+Although **100% of the data** is read, the access is sequential and fully optimized.
+
+---
+
+## Result Comparison
+
+| Scenario             | Time Taken |
+|----------------------|------------|
+| 90% Random Reads     | ~90 seconds |
+| 100% Sequential Read | ~0.5 seconds |
+
+---
+
+## Final Insight
+
+➡️ **Sequential I/O is ~180× faster than random I/O**
+
+### Key Takeaway
+> Storage systems are **latency-bound** for random I/O  
+> and **bandwidth-bound** for sequential I/O.
+
+This is why:
+- WAL is append-only
+- LSM Trees favor sequential writes
+- Analytics engines prefer scans over index lookups
+
+---
+
