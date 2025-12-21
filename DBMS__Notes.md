@@ -354,7 +354,7 @@ In a distributed system, you can only guarantee **two out of three**:
 
 ---
 
-#Random Points
+# Random Points
 
 ## Why Sequential I/O Beats Random I/O (Even with More Data)
 
