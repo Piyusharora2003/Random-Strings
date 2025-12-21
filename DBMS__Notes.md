@@ -354,7 +354,9 @@ In a distributed system, you can only guarantee **two out of three**:
 
 ---
 
-# Why Sequential I/O Beats Random I/O (Even with More Data)
+#Random Points
+
+## Why Sequential I/O Beats Random I/O (Even with More Data)
 
 This example demonstrates why **access pattern matters more than data volume** in storage systems.
 
