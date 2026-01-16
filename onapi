@@ -1,0 +1,293 @@
+Below is a handoff-ready design document (Markdown) you can give to another agent to start implementing the script in JavaScript (Node.js).
+I’m taking a copilot role here: I’ll explain the theory, flow, and alternatives, not just the steps.
+
+
+---
+
+📄 Asset Lookup via Rate-Limited Paginated API (Design Doc)
+
+1. Problem Summary
+
+We are given a paid GET API with strict rate limits (1 call / second).
+The API is paginated using updateId, not page numbers.
+
+Goal:
+Find whether a specific assetId exists in the API responses by continuously polling the API until:
+
+the asset is found, or
+
+the end of available data is reached.
+
+
+
+---
+
+2. API Characteristics
+
+Request Parameters
+
+Param	Description
+
+updateId	Cursor / reference point for pagination
+limit	Max number of records per call (e.g., 1000)
+apiKey	Authentication key
+
+
+Example Call
+
+GET /api?updateId=0&limit=1000&apiKey=XYZ
+
+
+---
+
+3. Response Structure (XML)
+
+Header Section
+
+<header>
+  <streamData>
+    <nextUpdateId>12345</nextUpdateId>
+    <maxUpdateId>99999</maxUpdateId>
+  </streamData>
+</header>
+
+nextUpdateId → use this for the next API call
+
+maxUpdateId → signals end of stream
+
+
+
+---
+
+Data Section
+
+<programAvailabilities>
+   ...
+   <assetId>ASSET_ABC_123</assetId>
+   ...
+</programAvailabilities>
+
+We must regex match or parse XML to check if the target assetId exists.
+
+
+---
+
+4. Core Algorithm (High Level)
+
+startUpdateId = 0
+
+WHILE (true):
+    call API with (startUpdateId, limit)
+    parse XML response
+
+    IF assetId found:
+        stop execution
+        return success
+
+    IF nextUpdateId >= maxUpdateId:
+        stop execution
+        return "asset not found"
+
+    startUpdateId = nextUpdateId
+    wait 1 second
+
+
+---
+
+5. Rate Limiting Strategy
+
+Why Required?
+
+API allows only 1 call per second
+
+Violating this can:
+
+burn quota
+
+block API key
+
+
+
+Solution
+
+Use a fixed delay loop:
+
+setTimeout
+
+setInterval
+
+or await sleep(1000)
+
+
+
+---
+
+6. JavaScript (Node.js) – Suggested Architecture
+
+Modules
+
+Module	Responsibility
+
+apiClient.js	Makes HTTP GET call
+xmlParser.js	Parses XML → JS object
+assetMatcher.js	Regex or direct assetId search
+poller.js	Loop + rate limiting
+index.js	Entry point
+
+
+
+---
+
+7. Pseudo Code (JS-Style)
+
+let currentUpdateId = 0;
+const LIMIT = 1000;
+const TARGET_ASSET_ID = "ASSET_ABC_123";
+
+while (true) {
+  const responseXml = await callApi(currentUpdateId, LIMIT);
+  
+  const {
+    nextUpdateId,
+    maxUpdateId,
+    hasAsset
+  } = parseAndCheck(responseXml, TARGET_ASSET_ID);
+
+  if (hasAsset) {
+    console.log("Asset found!");
+    break;
+  }
+
+  if (nextUpdateId >= maxUpdateId) {
+    console.log("Reached end. Asset not found.");
+    break;
+  }
+
+  currentUpdateId = nextUpdateId;
+  await sleep(1000); // rate limiting
+}
+
+
+---
+
+8. XML Handling Strategy
+
+Option 1 (Recommended): XML → JS Object
+
+Use libraries like:
+
+xml2js
+
+fast-xml-parser
+
+
+Pros
+
+Clean structure
+
+Less error-prone
+
+
+Cons
+
+Slight overhead
+
+
+
+---
+
+Option 2: Regex Search (Only for assetId)
+
+const regex = new RegExp(`<assetId>${targetId}</assetId>`);
+regex.test(xmlString);
+
+Pros
+
+Faster
+
+Simple
+
+
+Cons
+
+Fragile if XML structure changes
+
+
+➡️ Hybrid approach recommended:
+
+parse header properly
+
+regex match assetId only
+
+
+
+---
+
+9. Error Handling
+
+Scenario	Action
+
+API failure (5xx)	Retry after delay
+Invalid XML	Log + retry
+Rate limit error	Backoff (2–5 seconds)
+nextUpdateId missing	Stop execution
+
+
+
+---
+
+10. Exit Conditions (Very Important)
+
+The script must terminate when:
+
+1. Asset is found
+
+
+2. nextUpdateId >= maxUpdateId
+
+
+3. Critical unrecoverable error occurs
+
+
+
+
+---
+
+11. Logging (Mandatory)
+
+Log per iteration:
+
+[INFO] Calling API with updateId=12345
+[INFO] Asset not found, moving to nextUpdateId=13345
+
+Useful for:
+
+debugging
+
+audit
+
+quota analysis
+
+
+
+---
+
+12. Possible Enhancements (Future)
+
+Persist lastUpdateId to disk (resume support)
+
+Exponential backoff on failures
+
+Parallel search not allowed due to rate limit
+
+Config via .env
+
+
+
+---
+
+13. Final Recommendation
+
+✅ Node.js + async/await + XML parser + 1s delay loop
+This is the safest, quota-friendly, and maintainable approach.
+
