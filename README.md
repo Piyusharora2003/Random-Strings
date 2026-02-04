@@ -1,35 +1,132 @@
-New Authentication and Flow:
+```json
+[
+  {
+    "name": "Test Media Upload",
+    "endpoint": "/api/media",
+    "method": "POST",
+    "request": {
+      "body": {
+        "id": "123",
+        "name": "Sample Asset",
+        "url": "example.com",
+        "imageUrl": "example.com/img",
+        "country": "US"
+      }
+    },
+    "validations": [
+      {
+        "target": "dynamodb",
+        "query": { "id": "123" },
+        "expectedResult": { "state": "uploaded" }
+      },
+      {
+        "target": "postgres",
+        "query": "SELECT * FROM media_history WHERE id = '123'",
+        "expectedResult": { "action": "created" }
+      },
+      {
+        "target": "oracle",
+        "query": "SELECT * FROM media_assets WHERE id = '123'",
+        "expectedResult": { "name": "Sample Asset" },
+        "delaySeconds": 20
+      }
+    ]
+  }
+]
 
-Authentication Changes: Previously, user preferences were stored locally. Now, user details are stored in a database via the common layer, our API gateway.
+```
 
-Login Flow: When a user logs in, the MFE shell redirects to the common layer’s /token endpoint for session creation. Once validated, the user is redirected back with a session ID.
+api-test-runner/
+├── src/main/java
+│   └── com.company.testrunner
+│       ├── runner/
+│       │   └── TestRunnerApplication.java
+│       ├── suite/
+│       │   ├── TestSuiteLoader.java
+│       │   ├── TestCase.java
+│       │   └── ValidationSpec.java
+│       ├── executor/
+│       │   ├── TestExecutor.java
+│       │   └── ApiExecutor.java
+│       ├── validation/
+│       │   ├── ValidationEngine.java
+│       │   ├── DatabaseValidator.java
+│       │   ├── DynamoValidator.java
+│       │   ├── PostgresValidator.java
+│       │   └── OracleValidator.java
+│       ├── retry/
+│       │   └── RetryPolicy.java
+│       └── report/
+│           └── TestReport.java
+└── src/main/resources
+    ├── test-suites/
+    │   └── media-tests.json
+    └── application.yml
 
-Headers Used for Authorization and Routing:
 
-menu-name: Indicates which part of the application is calling the API for authorization.
 
-user-info: Carries encrypted user information, acting like a JWT token.
+┌────────────────────────┐
+│   TestRunner (main)    │
+└───────────┬────────────┘
+            │
+┌───────────▼────────────┐
+│  TestSuiteLoader       │  ← loads JSON
+└───────────┬────────────┘
+            │
+┌───────────▼────────────┐
+│  TestExecutor          │
+│  - API Executor        │
+│  - Validation Engine   │
+└───────┬───────┬────────┘
+        │       │
+ ┌──────▼───┐ ┌─▼────────┐
+ │ API Call │ │ Validators│
+ └──────────┘ │ Dynamo    │
+              │ Postgres  │
+              │ Oracle    │
+              └───────────┘
 
-user-pref-region: Specifies the region (e.g., US or EU) for the PPLE backend, so the common layer can route requests accordingly.
 
-Flow of Requests:
 
-Initial User Detail API Call: The MFE shell calls the common layer to get user details.
 
-Routing Subsequent Requests: Any requests to /pple/... endpoints are forwarded by the common layer to the appropriate PPLE backend based on the region header.
 
-Mermaid Diagram:
 
-sequenceDiagram
-    participant User
-    participant MFE_Shell
-    participant Common_Layer
-    participant PPLE_Backend
+Build a standalone Spring Boot test runner that:
+Reads API test cases from JSON
+Executes API calls (via API Gateway)
+Handles async/eventual consistency (SQS → consumer)
+Validates final state across:
+DynamoDB (state)
+Postgres (history)
+Oracle (asset – eventual consistency)
+Produces human-readable + machine-readable test reports
+Runs on-demand (CLI / main method)
 
-    User->>MFE_Shell: Clicks Login
-    MFE_Shell->>Common_Layer: Request userDetail API
-    Common_Layer->>Common_Layer: Fetch user details, return to shell
-    MFE_Shell->>Common_Layer: Subsequent /pple/... requests
-    Common_Layer->>PPLE_Backend: Forward to PPLE backend based on region
-    PPLE_Backend-->>Common_Layer: Return response
-    Common_Layer-->>MFE_Shell: Forward response to client
+
+🧠 Core Design Principles (tell your agent)
+Configuration over code (JSON drives everything)
+Pluggable validations (DBs are interchangeable)
+Retry-based eventual consistency, not fixed sleep
+Fail fast, but report everything
+No Spring MVC / Controllers – this is a runner, not an API
+
+🔄 Execution Flow (Step-by-Step)
+1️⃣ Bootstrap
+Start Spring context
+Load DB configs + AWS creds
+2️⃣ Load Suite
+Read JSON
+Deserialize into TestCase objects
+3️⃣ Execute API
+Call API Gateway
+Validate HTTP status
+Extract correlation IDs (optional)
+4️⃣ Run Validations
+Immediate:
+DynamoDB
+Postgres
+Eventual:
+Oracle via retry loop
+5️⃣ Retry Strategy (Key Insight)
+Never Thread.sleep()
+Use polling until success or timeout
