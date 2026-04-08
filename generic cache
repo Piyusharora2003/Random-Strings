@@ -1,0 +1,36 @@
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
+
+import java.util.concurrent.TimeUnit;
+
+public class GenericCache<T> {
+
+    private final Cache<String, T> cache;
+
+    public GenericCache(int maxSize, int expiryMinutes) {
+        this.cache = Caffeine.newBuilder()
+                .maximumSize(maxSize)
+                .expireAfterWrite(expiryMinutes, TimeUnit.MINUTES)
+                .build();
+    }
+
+    // Check if key exists
+    public boolean contains(String key) {
+        return cache.getIfPresent(key) != null;
+    }
+
+    // Put value
+    public void put(String key, T value) {
+        cache.put(key, value);
+    }
+
+    // Get value
+    public T get(String key) {
+        return cache.getIfPresent(key);
+    }
+
+    // Optional remove
+    public void invalidate(String key) {
+        cache.invalidate(key);
+    }
+}
