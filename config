@@ -1,0 +1,4 @@
+mybatis.configuration.log-impl=org.apache.ibatis.logging.stdout.StdOutImpl
+
+logging.level.org.mybatis=DEBUG
+logging.level.java.sql=DEBUG
