@@ -1,0 +1,13 @@
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+
+public class TransactionIdGenerator {
+    public static void main(String[] args) {
+        LocalDateTime now = LocalDateTime.now();
+
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("ddMMHHmm");
+        String transactionId = now.format(formatter);
+
+        System.out.println(transactionId);
+    }
+}
