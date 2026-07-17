@@ -1,0 +1,176 @@
+# Task
+
+Fix the filter state management and synchronization issues in the Angular filter workflow.
+
+Use a structured, hypothesis-driven approach (Generated Knowledge Prompting) before making any code changes.
+
+---
+
+# Objective
+
+Ensure the filter system behaves consistently across the following components:
+
+- Metadata History Component
+- License History Component
+- Asset Status History Component
+- Filter Modal Component
+
+The fixes must be limited to these four components only.
+
+---
+
+# Generated Knowledge Phase (Perform internally before coding)
+
+Before making any code changes, develop an internal understanding of:
+
+1. How filter state flows between the history components and the Filter Modal Component.
+2. Which component is the source of truth for applied filters.
+3. How the Filter Modal Component is initialized when opened.
+4. How filters are applied and propagated back to the parent component.
+5. How applied filters are persisted after clicking **Apply Filters**.
+6. How the Filter Modal Component restores state when reopened.
+7. How the active filter count is calculated.
+8. How the Date Range filter contributes to the active filter count.
+9. Potential causes of stale state in the Filter Modal Component.
+10. The smallest and safest architectural change that resolves both reported issues without introducing regressions.
+
+Do not begin implementing immediately. First identify the root cause(s), then implement the minimal, maintainable solution.
+
+---
+
+# Problems to Fix
+
+## 1. Filter Modal Synchronization
+
+### Current Behaviour
+
+- User opens the Filter Modal Component.
+- User modifies one or more filters.
+- User clicks **Apply Filters**.
+- The modal closes.
+- When the Filter Modal Component is opened again, the previously applied filters are not correctly reflected in the UI (stale, missing, or inconsistent values).
+
+### Expected Behaviour
+
+- Clicking **Apply Filters** persists the applied filters.
+- Reopening the Filter Modal Component initializes every control with the currently applied filters.
+- The UI always reflects the latest applied state.
+- There is a single source of truth for filter state.
+- No stale local state.
+- No duplicated state.
+- No partially synchronized controls.
+
+---
+
+## 2. Date Range Filter Count Bug
+
+### Current Behaviour
+
+Updating the Date Range filter does not correctly update the active filter count displayed to the user.
+
+### Expected Behaviour
+
+Whenever the Date Range filter changes:
+
+- Active filter count is recalculated immediately.
+- Filter badge/count updates instantly.
+- Removing the Date Range decreases the count correctly.
+- Behaviour is consistent with every other filter.
+- No reopening of the modal should be required.
+
+---
+
+# Scope Restrictions
+
+Only modify files belonging to:
+
+- Metadata History Component
+- License History Component
+- Asset Status History Component
+- Filter Modal Component
+
+Do NOT modify:
+
+- Shared services
+- Global state
+- Shared components
+- Routing
+- Backend APIs
+- Application configuration
+- Unrelated modules
+- Any files outside the four components listed above
+
+Unless absolutely necessary to resolve the issue.
+
+---
+
+# Implementation Guidelines
+
+Prefer:
+
+- Single source of truth for filter state.
+- Immutable state updates.
+- Existing Angular patterns already present in the project.
+- Minimal code changes.
+- Reusing existing logic where possible.
+- Eliminating duplicate local state.
+- Avoiding unnecessary subscriptions.
+- Avoiding race conditions.
+- Maintainable and readable implementation.
+
+Do not introduce new dependencies or libraries.
+
+---
+
+# Mandatory Manual Verification
+
+Do **not** assume the implementation is correct after making code changes.
+
+Perform manual verification before considering the task complete.
+
+## Functional Verification
+
+Verify manually that:
+
+- Opening the Filter Modal displays the current applied filters.
+- Applying filters closes the modal.
+- Reopening the modal shows the same applied filters.
+- Changing filters updates the displayed results correctly.
+- Clearing filters clears both the UI and applied state.
+- Date Range updates the active filter count immediately.
+- Removing Date Range decreases the count correctly.
+- Multiple filters work correctly together.
+- No regressions are introduced in existing filter functionality.
+
+## Build Verification
+
+Perform a complete build of the application after the changes.
+
+Confirm that:
+
+- The application builds successfully.
+- No compilation errors occur.
+- No linting errors are introduced (if linting is configured).
+- The application launches successfully.
+- The modified screens render without runtime errors.
+
+Do not mark the task complete until both manual functional verification and build verification have been completed successfully.
+
+---
+
+# Deliverables
+
+Provide:
+
+1. Root cause analysis for each issue.
+2. Files modified.
+3. Summary of changes made in each file.
+4. Manual verification results, including which scenarios were tested.
+5. Build verification results.
+6. Explanation of why the implemented solution resolves both issues.
+7. Any assumptions made during implementation.
+8. Confirmation that changes were limited exclusively to:
+   - Metadata History Component
+   - License History Component
+   - Asset Status History Component
+   - Filter Modal Component.
