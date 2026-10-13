@@ -1,0 +1,171 @@
+#!/usr/bin/env node
+'use strict';
+
+/**
+ * Dump Oracle tables to files, streaming in batches.
+ *
+ * Usage:
+ *   npm install oracledb
+ *   node --env-file=.env oracle-dump.js            (Node 20.6+)
+ *   node oracle-dump.js config.json                (optional JSON config)
+ *
+ * Environment variables (override config.json values): see env.example
+ * Optional config.json:
+ *   { "connection": {...}, "tables": [...], "outputDir": "./dump",
+ *     "format": "csv" | "jsonl", "batchSize": 5000 }
+ */
+
+const fs = require('fs');
+const path = require('path');
+const { once } = require('events');
+const oracledb = require('oracledb');
+
+// Return CLOBs as strings and BLOBs as Buffers (fine for moderately sized LOBs).
+oracledb.fetchAsString = [oracledb.CLOB];
+oracledb.fetchAsBuffer = [oracledb.BLOB];
+
+const TABLE_RE = /^[A-Za-z][A-Za-z0-9_$#]*(\.[A-Za-z][A-Za-z0-9_$#]*)?$/;
+
+function loadConfig() {
+  // Optional JSON file; environment variables override file values.
+  const file = process.argv[2];
+  const cfg = file ? JSON.parse(fs.readFileSync(file, 'utf8')) : {};
+  const env = process.env;
+
+  const connection = {
+    ...(cfg.connection || {}),
+    ...(env.ORACLE_USER && { user: env.ORACLE_USER }),
+    ...(env.ORACLE_PASSWORD && { password: env.ORACLE_PASSWORD }),
+    ...(env.ORACLE_CONNECT_STRING && { connectString: env.ORACLE_CONNECT_STRING }),
+  };
+  if (!connection.user || !connection.password || !connection.connectString) {
+    throw new Error('Missing connection settings (user, password, connectString)');
+  }
+
+  const tables = env.TABLES
+    ? env.TABLES.split(',').map((t) => t.trim()).filter(Boolean)
+    : cfg.tables;
+  if (!Array.isArray(tables) || tables.length === 0) {
+    throw new Error('No tables specified (TABLES env var or "tables" in config)');
+  }
+  for (const t of tables) {
+    if (!TABLE_RE.test(t)) throw new Error(`Invalid table name: ${t}`);
+  }
+
+  return {
+    connection,
+    tables,
+    outputDir: env.OUTPUT_DIR || cfg.outputDir || './dump',
+    format: (env.FORMAT || cfg.format || 'csv').toLowerCase(),
+    batchSize: parseInt(env.BATCH_SIZE, 10) || cfg.batchSize || 5000,
+  };
+}
+
+// ---------- serialization ----------
+
+function csvCell(v) {
+  if (v === null || v === undefined) return '';
+  let s;
+  if (v instanceof Date) s = v.toISOString();
+  else if (Buffer.isBuffer(v)) s = v.toString('hex');
+  else s = String(v);
+  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+function jsonReplacer(_k, v) {
+  return Buffer.isBuffer(v) ? v.toString('hex') : v;
+}
+
+function serializeBatch(rows, columns, format) {
+  if (format === 'jsonl') {
+    let out = '';
+    for (const row of rows) {
+      const obj = {};
+      for (let i = 0; i < columns.length; i++) obj[columns[i]] = row[i];
+      out += JSON.stringify(obj, jsonReplacer) + '\n';
+    }
+    return out;
+  }
+  let out = '';
+  for (const row of rows) out += row.map(csvCell).join(',') + '\n';
+  return out;
+}
+
+// ---------- dump ----------
+
+async function write(stream, chunk) {
+  if (!stream.write(chunk)) await once(stream, 'drain');
+}
+
+async function dumpTable(conn, table, { outputDir, format, batchSize }) {
+  const ext = format === 'jsonl' ? 'jsonl' : 'csv';
+  const file = path.join(outputDir, `${table.toUpperCase()}.${ext}`);
+  const out = fs.createWriteStream(file, { encoding: 'utf8' });
+  const outError = once(out, 'error').then(([e]) => { throw e; });
+  outError.catch(() => {}); // avoid unhandled rejection; surfaced via write/finish
+
+  let rs;
+  let total = 0;
+  const start = Date.now();
+
+  try {
+    const result = await conn.execute(`SELECT * FROM ${table}`, [], {
+      resultSet: true,
+      fetchArraySize: batchSize,
+    });
+    rs = result.resultSet;
+
+    const columns = result.metaData.map((m) => m.name);
+    if (format === 'csv') await write(out, columns.map(csvCell).join(',') + '\n');
+
+    // Iterate: only one batch lives in memory at a time.
+    let rows;
+    while ((rows = await rs.getRows(batchSize)).length > 0) {
+      await write(out, serializeBatch(rows, columns, format));
+      total += rows.length;
+      process.stdout.write(`\r[${table}] ${total} rows`);
+    }
+
+    out.end();
+    await once(out, 'finish');
+    const secs = ((Date.now() - start) / 1000).toFixed(1);
+    console.log(`\r[${table}] done: ${total} rows -> ${file} (${secs}s)`);
+  } catch (err) {
+    out.destroy();
+    throw err;
+  } finally {
+    if (rs) await rs.close().catch(() => {});
+  }
+}
+
+async function main() {
+  const cfg = loadConfig();
+  fs.mkdirSync(cfg.outputDir, { recursive: true });
+
+  const conn = await oracledb.getConnection(cfg.connection);
+  console.log('Connected to Oracle');
+
+  let failed = 0;
+  try {
+    for (const table of cfg.tables) {
+      try {
+        await dumpTable(conn, table, cfg);
+      } catch (err) {
+        failed++;
+        console.error(`\n[${table}] FAILED: ${err.message}`);
+      }
+    }
+  } finally {
+    await conn.close();
+  }
+
+  if (failed) {
+    console.error(`${failed} table(s) failed`);
+    process.exit(1);
+  }
+}
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});
